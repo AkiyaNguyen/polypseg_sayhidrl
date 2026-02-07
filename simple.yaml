@@ -1,0 +1,32 @@
+model:
+  name: 'PVT_CASCADE'
+  load_path: ""
+  type: extend_CASCADE_classifier
+  pvt_backbone_path: './pretrained_pth/pvt/pvt_v2_b2.pth'
+  total_model_path:
+optimizer:
+  name: SGD
+  learning_rate: 1e-4
+trainer:
+  num_epochs: 10
+device: cuda
+
+dataset:
+  train_val:
+    path:
+    img_size: 352
+    batchsize: 16
+    augmentation: False 
+  test:
+    path:
+hook:
+  lr_schedule:
+    decay_rate: 0.1
+    decay_epoch: 50
+  clip_gradient:
+    clip: 0.5
+
+save_model:
+  base_pth_path: "./model_pth/${model.name}/"
+
+device: cuda
