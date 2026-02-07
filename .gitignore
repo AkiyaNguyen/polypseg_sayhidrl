@@ -17,3 +17,5 @@ testlib.py
 mlflow.db
 
 detail_config/
+
+mylib/
