@@ -77,9 +77,12 @@ class extend_CASCADE_classifier(Classifier):
         """
         X, Y = batch
         if isinstance(X, tuple) or isinstance(X, list):
+            X = tuple(x.to(self.device) for x in X)
             Y_hat = self(*X)
         else:
+            X = X.to(self.device)
             Y_hat = self(X) ## unpack X since X is initially a dict or tuple
+        Y = Y.to(self.device)
         loss_dict = self.loss_function(Y_hat, Y)
         return loss_dict
 
@@ -94,10 +97,12 @@ class extend_CASCADE_classifier(Classifier):
         with torch.no_grad():
             for batch in test_data_loader:
                 X, Y = batch
-
+                Y = Y.to(self.device)
                 if isinstance(X, tuple) or isinstance(X, list):
+                    X = tuple(x.to(self.device) for x in X)
                     Y_hat = self(*X)
                 else:
+                    X = X.to(self.device)
                     Y_hat = self(X)
                 
                 loss_dict = self.loss_function(Y_hat, Y)
