@@ -47,6 +47,7 @@ class SaveBestModelHook(HookBase):
         self.best_value = None
         self.cmp = cmp
     def save_best_model(self, name: str) -> None:
+        os.makedirs(name=self.save_best_model_path, exist_ok=True)
         torch.save(self.trainer.model.state_dict(), self.save_best_model_path + f'{name}.pth')
     def after_train_epoch(self) -> None:
         latest_info = self.trainer.info_storage.latest_info()
@@ -78,6 +79,8 @@ class TestHook(HookBase):
         """Run test on one dataset (path contains images/ and masks/). Returns mean Dice."""
         image_root = os.path.join(data_path, 'images')
         gt_root = os.path.join(data_path, 'masks')
+        print('image_root=', image_root)
+        print('gt_root=', gt_root)
         if not os.path.isdir(image_root) or not os.path.isdir(gt_root):
             return float('nan')
         loader = test_dataset(image_root, gt_root, self.img_size)
@@ -121,6 +124,7 @@ class TestHook(HookBase):
             result = {}
             for name in sorted(subdirs):
                 data_path = os.path.join(path, name)
+                print('datapath =', data_path)
                 dice = self._run_test_on_single_dataset(data_path, name)
                 result[f'test_dice_{name}'] = dice
             if result:
@@ -300,20 +304,21 @@ if __name__ == '__main__':
 
     # ## build hooks with config
     hook_builder(EvalHook, eval_data_loader=val_loader)
+    hook_builder(TestHook, test_dataset_path=cfg.get('dataset.test.path'), 
+                test_every=int(cfg.get('dataset.test.test_every')), 
+                recursive_test=cfg.get('dataset.test.recursive_test'), 
+                img_size=cfg.get('dataset.test.img_size'))
     hook_builder(MLFlowLoggerHook, logging_fields=['*val*', '*loss*', '*test_dice*'])
+    hook_builder(SaveBestModelHook, 
+                save_best_model_path=cfg.get('hook.save_model.base_pth_path') + f'{cfg.get("model.name")}/', 
+                criteria=cfg.get('hook.save_model.criteria'))
     hook_builder(LRScheduleHook, decay_rate=cfg.get('hook.lr_schedule.decay_rate'), 
                 decay_epoch=cfg.get('hook.lr_schedule.decay_epoch'))
     hook_builder(ClipGradient, clip_rate=float(cfg.get('hook.clip_gradient.clip')))
-    hook_builder(SaveBestModelHook, save_best_model_path=cfg.get('hook.save_model.base_pth_path') + f'{cfg.get("model.name")}/', criteria=cfg.get('hook.save_model.criteria'))
-    hook_builder(TestHook, test_dataset_path=cfg.get('dataset.test.path'), 
-                    test_every=int(cfg.get('dataset.test.test_every')), 
-                    recursive_test=cfg.get('hook.test.recursive_test'), 
-                    img_size=cfg.get('hook.test.img_size'))
     hook_builder(LoggerHook, logger_file=cfg.get('hook.logger.logger_file'))
+
+    trainer.train()
     ## ====== training=======
 
     trainer.train()
-
-
-
 
