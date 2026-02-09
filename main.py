@@ -1,5 +1,4 @@
 import inspect
-
 import os
 
 from mylib.engine.Trainer import Trainer
@@ -10,7 +9,7 @@ from mylib.engine.Hook import HookBase, EvalHook, LoggerHook, MLFlowLoggerHook
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import typing
 from torch.utils.data import DataLoader
 
 import numpy as np
@@ -40,7 +39,31 @@ class ClipGradient(HookBase):
     def before_train_epoch(self) -> None:
         clip_gradient(self.trainer.optimizer, grad_clip=self.clip)
 
-        
+class SaveBestModelHook(HookBase):
+    def __init__(self, trainer, save_best_model_path: str, criteria: str = 'val_dice', cmp: typing.Callable = lambda a, b: a > b):
+        super().__init__(trainer)
+        self.save_best_model_path = save_best_model_path
+        self.criteria = criteria
+        self.best_value = None
+        self.cmp = cmp
+    def save_best_model(self, name: str) -> None:
+        torch.save(self.trainer.model.state_dict(), self.save_best_model_path + f'{name}.pth')
+    def after_train_epoch(self) -> None:
+        latest_info = self.trainer.info_storage.latest_info()
+        if self.criteria not in latest_info:
+            raise ValueError(f"Criteria {self.criteria} is not found in latest info")
+        current_value = latest_info[self.criteria]
+        if self.best_value is None:
+            self.best_value = current_value
+            self.save_best_model(name=f'{self.trainer.current_epoch + 1}')
+            return
+        if not self.cmp(current_value, self.best_value):
+            return
+        ## update best value and save best model
+        self.best_value = current_value
+        self.save_best_model(name=f'{self.trainer.current_epoch + 1}')
+        print(f"Best {self.criteria} updated to {current_value}")
+
 class TestHook(HookBase):
     def __init__(self, trainer: Trainer, test_dataset_path, test_every: int = 10, recursive_test: bool = True, img_size: int = 352):
         super().__init__(trainer)
@@ -281,6 +304,7 @@ if __name__ == '__main__':
     hook_builder(LRScheduleHook, decay_rate=cfg.get('hook.lr_schedule.decay_rate'), 
                 decay_epoch=cfg.get('hook.lr_schedule.decay_epoch'))
     hook_builder(ClipGradient, clip_rate=float(cfg.get('hook.clip_gradient.clip')))
+    hook_builder(SaveBestModelHook, save_best_model_path=cfg.get('hook.save_model.base_pth_path') + f'{cfg.get("model.name")}/', criteria=cfg.get('hook.save_model.criteria'))
     hook_builder(TestHook, test_dataset_path=cfg.get('dataset.test.path'), 
                     test_every=int(cfg.get('dataset.test.test_every')), 
                     recursive_test=cfg.get('hook.test.recursive_test'), 

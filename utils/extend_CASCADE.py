@@ -98,10 +98,11 @@ class extend_CASCADE_classifier(Classifier):
         self.eval()
         total_loss = 0.0
         total_dice = 0.0
+        
+        device = next(self.model.parameters()).device
         with torch.no_grad():
             for batch in test_data_loader:
                 X, Y = batch
-                device = next(self.model.parameters()).device
                 Y = Y.to(device)
                 if isinstance(X, tuple) or isinstance(X, list):
                     X = tuple(x.to(device) for x in X)

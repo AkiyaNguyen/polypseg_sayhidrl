@@ -30,6 +30,6 @@ hook:
     clip: 0.5
   logger:
     logger_file: 'logger.json'
-
-save_model:
-  base_pth_path: "./model_pth/${model.name}/"
+  save_model:
+    base_pth_path: "./model_pth/"
+    criteria: "val_dice"
