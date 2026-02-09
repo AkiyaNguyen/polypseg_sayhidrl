@@ -252,7 +252,7 @@ if __name__ == '__main__':
 
     cfg_builder = default_CASCADE_ConfigBuilder(config=cfg)
 
-    model = cfg_builder.build_model_with_config(pre_defined_model=PVT_CASCADE())
+    model = cfg_builder.build_model_with_config(pre_defined_model=PVT_CASCADE(pvt_backbone_path=cfg.get('model.pvt_backbone_path')))
     model.to(device)
 
     optimizer = cfg_builder.build_optimizer_with_config(model=model)
