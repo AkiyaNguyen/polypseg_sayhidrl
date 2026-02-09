@@ -13,20 +13,23 @@ device: cuda
 
 dataset:
   train_val:
-    path:
+    path: './dataset/TrainDataset/'
     img_size: 352
     batchsize: 16
     augmentation: False 
   test:
-    path:
+    path: './dataset/TestDataset/'
+    test_every: 10
+    recursive_test: True
+    img_size: 352
 hook:
   lr_schedule:
     decay_rate: 0.1
     decay_epoch: 50
   clip_gradient:
     clip: 0.5
+  logger:
+    logger_file: 'logger.json'
 
 save_model:
   base_pth_path: "./model_pth/${model.name}/"
-
-device: cuda

@@ -1,7 +1,6 @@
 import inspect
 
-from torch.nn import Module
-from torch.utils.data import DataLoader
+import os
 
 from mylib.engine.Trainer import Trainer
 from mylib.engine.nnModuleUtil import extend_module
@@ -9,10 +8,16 @@ from mylib.engine.Config import Config, HookBuilder, ConfigBuilder
 from mylib.engine.Hook import HookBase, EvalHook, LoggerHook, MLFlowLoggerHook
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
+from torch.utils.data import DataLoader
+
+import numpy as np
+
+
 from CASCADE.networks import PVT_CASCADE
-from utils.dataloader import get_loader, test_dataset, get_train_val_loader
+from utils.dataloader import test_dataset, get_train_val_loader
 from utils.utils import clip_gradient, adjust_lr, AvgMeter
 from utils.extend_CASCADE import extend_CASCADE_classifier
 
@@ -28,6 +33,87 @@ class LRScheduleHook(HookBase):
         epoch = self.trainer.current_epoch + 1
         adjust_lr(optim, epoch, self.decay_rate, self.decay_epoch)
     
+class ClipGradient(HookBase):
+    def __init__(self, trainer, clip_rate):
+        super().__init__(trainer)
+        self.clip = clip_rate
+    def before_train_epoch(self) -> None:
+        clip_gradient(self.trainer.optimizer, grad_clip=self.clip)
+
+        
+class TestHook(HookBase):
+    def __init__(self, trainer: Trainer, test_dataset_path, test_every: int = 10, recursive_test: bool = True, img_size: int = 352):
+        super().__init__(trainer)
+        self.test_dataset_path = test_dataset_path
+        self.recursive_test = recursive_test
+        self.img_size = img_size
+        if test_every <= 0:
+            raise ValueError("test_every must be postive integer!")
+        self.test_every = test_every
+
+    def _run_test_on_single_dataset(self, data_path: str, dataset_name: str) -> float:
+        """Run test on one dataset (path contains images/ and masks/). Returns mean Dice."""
+        image_root = os.path.join(data_path, 'images')
+        gt_root = os.path.join(data_path, 'masks')
+        if not os.path.isdir(image_root) or not os.path.isdir(gt_root):
+            return float('nan')
+        loader = test_dataset(image_root, gt_root, self.img_size)
+        model = self.trainer.model
+        device = next(model.parameters()).device
+        model.eval()
+        DSC = 0.0
+        smooth = 1
+        with torch.no_grad():
+            for _ in range(loader.size):
+                image, gt, _ = loader.load_data()
+                gt = np.asarray(gt, np.float32)
+                gt /= (gt.max() + 1e-8)
+                image = image.to(device)
+                res1, res2, res3, res4 = model(image)
+                res = F.upsample(
+                    res1 + res2 + res3 + res4,
+                    size=gt.shape,
+                    mode='bilinear',
+                    align_corners=False,
+                )
+                res = res.sigmoid().data.cpu().numpy().squeeze()
+                res = (res - res.min()) / (res.max() - res.min() + 1e-8)
+                input_flat = np.reshape(res, (-1))
+                target_flat = np.reshape(gt, (-1))
+                intersection = input_flat * target_flat
+                dice = (2 * intersection.sum() + smooth) / (res.sum() + gt.sum() + smooth)
+                DSC += float(dice)
+        model.train()
+        return DSC / loader.size if loader.size else float('nan')
+
+    def run_test(self) -> dict:
+        """Run test on configured path; if recursive_test, run on each subdir. Returns dict of metrics."""
+        path = self.test_dataset_path
+        if self.recursive_test and os.path.isdir(path):
+            # Each subdir is a dataset (e.g. CVC-300, Kvasir) with images/ and masks/
+            subdirs = [
+                d for d in os.listdir(path)
+                if os.path.isdir(os.path.join(path, d))
+            ]
+            result = {}
+            for name in sorted(subdirs):
+                data_path = os.path.join(path, name)
+                dice = self._run_test_on_single_dataset(data_path, name)
+                result[f'test_dice_{name}'] = dice
+            if result:
+                result['test_dice_mean'] = float(np.nanmean(list(result.values())))
+            return result
+        else:
+            # Single dataset path (must contain images/ and masks/)
+            dice = self._run_test_on_single_dataset(path, 'test')
+            return {'test_dice': dice}
+    def after_train_epoch(self) -> None:   
+        if (self.trainer.current_epoch + 1) % self.test_every != 0:
+            return    
+        test_result = self.run_test()
+        self.trainer.info_storage.add_to_latest_info(test_result)
+
+
 
 
 def structure_loss(pred, mask):
@@ -52,7 +138,7 @@ def get_proper_device(device: str):
         return torch.device('cuda')
     
 class default_CASCADE_ConfigBuilder(ConfigBuilder):
-    def build_model_with_config(self, pre_defined_model: Module | None):
+    def build_model_with_config(self, pre_defined_model: nn.Module | None):
         if pre_defined_model is None and \
             (self.get('model.load_path') is None or \
             self.get('model.load_path') == ''): # 
@@ -67,7 +153,7 @@ class default_CASCADE_ConfigBuilder(ConfigBuilder):
         else:
             raise ValueError(f"Invalid model type: {model_type}")
 
-    def build_optimizer_with_config(self, model: Module):
+    def build_optimizer_with_config(self, model: nn.Module):
         optimizer_name = self.get('optimizer.name')
         raw_lr = self.get('optimizer.learning_rate')
 
@@ -93,65 +179,73 @@ class default_CASCADE_ConfigBuilder(ConfigBuilder):
         if num_epochs is None:
             raise ValueError("Number of epochs is not set")
         return Trainer(model, train_data_loader, optimizer, num_epochs)
+
+# def test(model, path, dataset):
+
+#     data_path = os.path.join(path, dataset)
+#     image_root = '{}/images/'.format(data_path)
+#     gt_root = '{}/masks/'.format(data_path)
+#     model.eval()
+#     num1 = len(os.listdir(gt_root))
+#     test_loader = test_dataset(image_root, gt_root, opt.img_size)
+#     DSC = 0.0
+#     for i in range(num1):
+#         image, gt, name = test_loader.load_data()
+#         gt = np.asarray(gt, np.float32)
+#         gt /= (gt.max() + 1e-8)
+#         image = image.cuda()
+
+#         res1, res2, res3, res4 = model(image) # forward
+        
+        
+#         res = F.upsample(res1 + res2 + res3 + res4, size=gt.shape, mode='bilinear', align_corners=False) # additive aggregation and upsampling
+#         res = res.sigmoid().data.cpu().numpy().squeeze() # apply sigmoid aggregation for binary segmentation
+#         res = (res - res.min()) / (res.max() - res.min() + 1e-8)
+            
+#         # eval Dice
+#         input = res
+#         target = np.array(gt)
+#         N = gt.shape
+#         smooth = 1
+#         input_flat = np.reshape(input, (-1))
+#         target_flat = np.reshape(target, (-1))
+#         intersection = (input_flat * target_flat)
+#         dice = (2 * intersection.sum() + smooth) / (input.sum() + target.sum() + smooth)
+#         dice = '{:.4f}'.format(dice)
+#         dice = float(dice)
+#         DSC = DSC + dice
+
+#     return DSC / num1, num1  
+
+
+class DefaultTrainer(Trainer):
+    def scaled_dataloader_(self, rates):
+        for batch in self.train_data_loader:
+            images, gts = batch
+            images, gts = images.to('cuda'), gts.to('cuda')
+            for rate in rates:
+                trainsize = int(round(images.shape[0] * rate / 32) * 32)
+                images_scaled, gts_scaled = images, gts
+
+                if rate != 1:
+                    images_scaled = F.upsample(images, size=(trainsize, trainsize), mode='bilinear', align_corners=True)
+                    gts_scaled = F.upsample(gts, size=(trainsize, trainsize), mode='bilinear', align_corners=True)
+                yield images_scaled, gts_scaled
     
+    def run_step_(self) -> None:
+        for batch in self.scaled_dataloader_(rates=[0.75, 1.0, 1.25]):
+            self.optimizer.zero_grad()
+            loss_dict = self.model.compute_loss(batch)
+            loss_dict['loss'].backward()
+            self.optimizer.step()
+            ## add to info storage
+            self.info_storage.add_to_latest_info(loss_dict)
+
 
 if __name__ == '__main__':
     dict_plot = {'CVC-300':[], 'CVC-ClinicDB':[], 'Kvasir':[], 'CVC-ColonDB':[], 'ETIS-LaribPolypDB':[], 'test':[]}
     name = ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB', 'test']
-    ##################model_name#############################
-    # model_name = 'PVT_CASCADE'
-    ###############################################
-    # parser = argparse.ArgumentParser()
-
-    # parser.add_argument('--epoch', type=int,
-    #                     default=100, help='epoch number')
-
-    # parser.add_argument('--lr', type=float,
-    #                     default=1e-4, help='learning rate')
-
-    # parser.add_argument('--optimizer', type=str,
-    #                     default='AdamW', help='choosing optimizer AdamW or SGD')
-
-    # parser.add_argument('--augmentation',
-    #                     default=False, help='choose to do random flip rotation')
-
-    # parser.add_argument('--batchsize', type=int,
-    #                     default=16, help='training batch size')
-
-    # parser.add_argument('--trainsize', type=int,
-    #                     default=352, help='training dataset size')
-
-    # parser.add_argument('--clip', type=float,
-    #                     default=0.5, help='gradient clipping margin')
-
-    # parser.add_argument('--decay_rate', type=float,
-    #                     default=0.1, help='decay rate of learning rate')
-
-    # parser.add_argument('--decay_epoch', type=int,
-    #                     default=50, help='every n epochs decay learning rate')
-
-
-    # parser.add_argument('--train_path', type=str,
-    #                     default='./dataset/TrainDataset/',
-    #                     help='path to train dataset')
-
-    # parser.add_argument('--test_path', type=str,
-    #                     default='./dataset/TestDataset/',
-    #                     help='path to testing Kvasir dataset')
-
-    # parser.add_argument('--train_save', type=str,
-    #                     default='./model_pth/'+model_name+'/')
     
-    # parser.add_argument('--base_polyppvt_path', type=str,
-    #                     default='./model_pth/PolypPVT/PolypPVT.pth', help='path to pre-trained PolypPVT model')
-
-    # parser.add_argument('--device', type=str, default='cuda', choices=['cuda', 'cpu'], help='device to use for training / testing')
-
-    # parser.add_argument('--total_model_pth', type=str, default=None, help='If specified, load the whole model from this path')
-    # parser.add_argument('--polyppvt_model_pth', type=str, default=None, help='If specified, load the PolypPVT part from this path')
-
-    # opt = parser.parse_args()
-
     cfg = Config(config_file='simple.yaml')
 
     device = get_proper_device(cfg.get('device'))
@@ -162,7 +256,6 @@ if __name__ == '__main__':
     model.to(device)
 
     optimizer = cfg_builder.build_optimizer_with_config(model=model)
-    print(optimizer)
 
     train_path = cfg.get('dataset.train_val.path')
 
@@ -174,19 +267,25 @@ if __name__ == '__main__':
                                                     batchsize=int(cfg.get('dataset.train_val.batchsize')), 
                                                     trainsize=cfg.get('dataset.train_val.img_size'), 
                                                     augmentation=cfg.get('dataset.train_val.augmentation'))
-
+    
     trainer = cfg_builder.build_trainer_with_config(model=model, 
                                                     train_data_loader=train_loader, 
                                                     optimizer=optimizer)
         
     ## ====== hooks=======
     hook_builder = HookBuilder(config=cfg, trainer=trainer)
+
     # ## build hooks with config
-    hook_builder(LoggerHook, LOGGER_FILE='logger.json')
     hook_builder(EvalHook, eval_data_loader=val_loader)
-    hook_builder(MLFlowLoggerHook, logging_fields=['val_loss', 'val_dice', 'loss'])
+    hook_builder(MLFlowLoggerHook, logging_fields=['*val*', '*loss*', '*test_dice*'])
     hook_builder(LRScheduleHook, decay_rate=cfg.get('hook.lr_schedule.decay_rate'), 
                 decay_epoch=cfg.get('hook.lr_schedule.decay_epoch'))
+    hook_builder(ClipGradient, clip_rate=float(cfg.get('hook.clip_gradient.clip')))
+    hook_builder(TestHook, test_dataset_path=cfg.get('dataset.test.path'), 
+                    test_every=int(cfg.get('dataset.test.test_every')), 
+                    recursive_test=cfg.get('hook.test.recursive_test'), 
+                    img_size=cfg.get('hook.test.img_size'))
+    hook_builder(LoggerHook, logger_file=cfg.get('hook.logger.logger_file'))
     ## ====== training=======
 
     trainer.train()

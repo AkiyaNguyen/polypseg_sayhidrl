@@ -19,3 +19,5 @@ mlflow.db
 detail_config/
 
 mylib/
+
+train.sh

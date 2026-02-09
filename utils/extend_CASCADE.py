@@ -76,11 +76,10 @@ class extend_CASCADE_classifier(Classifier):
         return dictionary of losses, where the 'loss' key contains the main loss
         """
         X, Y = batch
-        if isinstance(X, list):
+        if isinstance(X, tuple) or isinstance(X, list):
             Y_hat = self(*X)
         else:
-            Y_hat = self(X)
-        # Y_hat = self(*X) ## unpack X since X is initially a dict or tuple
+            Y_hat = self(X) ## unpack X since X is initially a dict or tuple
         loss_dict = self.loss_function(Y_hat, Y)
         return loss_dict
 
@@ -96,7 +95,7 @@ class extend_CASCADE_classifier(Classifier):
             for batch in test_data_loader:
                 X, Y = batch
 
-                if isinstance(X, list):
+                if isinstance(X, tuple) or isinstance(X, list):
                     Y_hat = self(*X)
                 else:
                     Y_hat = self(X)
@@ -104,11 +103,18 @@ class extend_CASCADE_classifier(Classifier):
                 loss_dict = self.loss_function(Y_hat, Y)
                 total_loss += loss_dict['loss']
 
-                combine_pred = torch.zeros_like(Y_hat[0])
+                ## for this class, the forward function return a tuple of predictions, so we need to combine them
+                combine_pred = None
                 for Y_item in Y_hat:
-                    combine_pred += Y_item 
+                    if combine_pred is None:
+                        combine_pred = Y_item
+                    else:
+                        combine_pred += Y_item
                 
-                res = F.upsample(combine_pred, size=Y.shape, mode='bilinear', align_corners=False) # additive aggregation and upsampling
+                assert combine_pred.shape == Y.shape, "combine_pred and Y must have the same shape"
+                ## res has shape 
+
+                res = F.upsample(combine_pred, size=(Y.shape[-2], Y.shape[-1]), mode='bilinear', align_corners=False) # additive aggregation and upsampling
                 res = res.sigmoid().data.cpu().numpy().squeeze() # apply sigmoid aggregation for binary segmentation
                 res = (res - res.min()) / (res.max() - res.min() + 1e-8)
                 
