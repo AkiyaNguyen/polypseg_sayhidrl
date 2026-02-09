@@ -76,13 +76,17 @@ class extend_CASCADE_classifier(Classifier):
         return dictionary of losses, where the 'loss' key contains the main loss
         """
         X, Y = batch
+        device = next(self.model.parameters()).device
+        X = X.to(device)
+        Y = Y.to(device)
+        
         if isinstance(X, tuple) or isinstance(X, list):
-            X = tuple(x.to(self.device) for x in X)
+            X = tuple(x.to(device) for x in X)
             Y_hat = self(*X)
         else:
-            X = X.to(self.device)
+            X = X.to(device)
             Y_hat = self(X) ## unpack X since X is initially a dict or tuple
-        Y = Y.to(self.device)
+        Y = Y.to(device)
         loss_dict = self.loss_function(Y_hat, Y)
         return loss_dict
 
@@ -97,12 +101,13 @@ class extend_CASCADE_classifier(Classifier):
         with torch.no_grad():
             for batch in test_data_loader:
                 X, Y = batch
-                Y = Y.to(self.device)
+                device = next(self.model.parameters()).device
+                Y = Y.to(device)
                 if isinstance(X, tuple) or isinstance(X, list):
-                    X = tuple(x.to(self.device) for x in X)
+                    X = tuple(x.to(device) for x in X)
                     Y_hat = self(*X)
                 else:
-                    X = X.to(self.device)
+                    X = X.to(device)
                     Y_hat = self(X)
                 
                 loss_dict = self.loss_function(Y_hat, Y)
