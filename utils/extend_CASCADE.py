@@ -85,7 +85,7 @@ class extend_CASCADE_classifier(Classifier):
             Y_hat = self(*X)
         else:
             X = X.to(device)
-            Y_hat = self(X) ## unpack X since X is initially a dict or tuple
+            Y_hat = self(X)
         Y = Y.to(device)
         loss_dict = self.loss_function(Y_hat, Y)
         return loss_dict
