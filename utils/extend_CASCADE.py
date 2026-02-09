@@ -129,7 +129,9 @@ class extend_CASCADE_classifier(Classifier):
                 res = (res - res.min()) / (res.max() - res.min() + 1e-8)
                 
                 # eval Dice
-                dice = compute_dice(pred=res, target=np.array(Y),smooth=1)
+                ## can not simply convert Y to numpy array, because Y is a tensor in cuda or cpu
+                Y = Y.cpu().numpy()
+                dice = compute_dice(pred=res, target=Y,smooth=1)
                 total_dice += dice
 
         len_val_dataset = len(test_data_loader)
