@@ -157,14 +157,14 @@ class EarlyStoppingHook(HookBase):
         if not self.cmp(current_value, self.best_value + self.min_improvement):
             self.counter += 1
             if self.counter >= self.patience:
-                self.trainer.stop()
+                self.trainer.stop_training()
                 return
         else:
             self.best_value = current_value
             self.counter = 0
     def after_train(self) -> None:
         if self.counter >= self.patience:
-            print(f"After training for {self.trainer.current_epoch} epochs")
+            print(f"After training for {self.trainer.current_epoch + 1} epochs")
             print("The training procedure is stopped by EarlyStoppingHook")
 
 def structure_loss(pred, mask):
