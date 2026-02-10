@@ -142,9 +142,9 @@ class EarlyStoppingHook(HookBase):
         super().__init__(trainer)
         self.patience = patience
         self.criteria = criteria
+        self.min_improvement = min_improvement
         self.cmp = cmp
         self.best_value = None
-        self.min_improvement = min_improvement
         self.counter = 0
     def after_train_epoch(self) -> None:
         latest_info = self.trainer.info_storage.latest_info()
@@ -164,7 +164,7 @@ class EarlyStoppingHook(HookBase):
             self.counter = 0
     def after_train(self) -> None:
         if self.counter >= self.patience:
-            print(f"After training for {self.trainer.current_epoch + 1} epochs")
+            print(f"after training for {self.trainer.current_epoch + 1} epochs")
             print("The training procedure is stopped by EarlyStoppingHook")
 
 def structure_loss(pred, mask):
@@ -346,11 +346,10 @@ if __name__ == '__main__':
                 decay_epoch=cfg.get('hook.lr_schedule.decay_epoch'))
     hook_builder(ClipGradient, clip_rate=float(cfg.get('hook.clip_gradient.clip')))
     hook_builder(LoggerHook, logger_file=cfg.get('hook.logger.logger_file'))
-    hook_builder(EarlyStoppingHook, patience=cfg.get('hook.early_stopping.patience'), 
-                    min_improvement=float(cfg.get('hook.early_stopping.min_improvement')),
-                criteria=cfg.get('hook.early_stopping.criteria'))
-
-
+    hook_builder(EarlyStoppingHook, patience=int(cfg.get('hook.early_stopping.patience')), 
+                criteria=cfg.get('hook.early_stopping.criteria'), 
+                min_improvement=float(cfg.get('hook.early_stopping.min_improvement')))
+                
     trainer.train()
     ## ====== training=======
 

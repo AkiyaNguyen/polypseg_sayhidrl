@@ -21,3 +21,7 @@ detail_config/
 mylib/
 
 train.sh
+
+test_output/
+
+model_pth/
