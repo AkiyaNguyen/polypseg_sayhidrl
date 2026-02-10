@@ -349,9 +349,8 @@ if __name__ == '__main__':
     hook_builder(EarlyStoppingHook, patience=int(cfg.get('hook.early_stopping.patience')), 
                 criteria=cfg.get('hook.early_stopping.criteria'), 
                 min_improvement=float(cfg.get('hook.early_stopping.min_improvement')))
-                
-    trainer.train()
+
     ## ====== training=======
 
-    # trainer.train()
+    trainer.train()
 
