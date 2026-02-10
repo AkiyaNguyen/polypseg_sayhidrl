@@ -353,5 +353,5 @@ if __name__ == '__main__':
     trainer.train()
     ## ====== training=======
 
-    trainer.train()
+    # trainer.train()
 
