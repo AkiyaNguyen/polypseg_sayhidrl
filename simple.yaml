@@ -3,6 +3,7 @@ model:
   load_path: ""
   type: extend_CASCADE_classifier
   pvt_backbone_path: './pretrained_pth/pvt/pvt_v2_b2.pth'
+  total_pvt_cascade_path: 
   total_model_path:
 optimizer:
   name: SGD

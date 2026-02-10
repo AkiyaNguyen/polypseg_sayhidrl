@@ -79,8 +79,6 @@ class TestHook(HookBase):
         """Run test on one dataset (path contains images/ and masks/). Returns mean Dice."""
         image_root = os.path.join(data_path, 'images')
         gt_root = os.path.join(data_path, 'masks')
-        print('image_root=', image_root)
-        print('gt_root=', gt_root)
         if not os.path.isdir(image_root) or not os.path.isdir(gt_root):
             return float('nan')
         loader = test_dataset(image_root, gt_root, self.img_size)
@@ -124,7 +122,6 @@ class TestHook(HookBase):
             result = {}
             for name in sorted(subdirs):
                 data_path = os.path.join(path, name)
-                print('datapath =', data_path)
                 dice = self._run_test_on_single_dataset(data_path, name)
                 result[f'test_dice_{name}'] = dice
             if result:
@@ -268,18 +265,24 @@ class DefaultTrainer(Trainer):
             ## add to info storage
             self.info_storage.add_to_latest_info(loss_dict)
 
-
 if __name__ == '__main__':
-    dict_plot = {'CVC-300':[], 'CVC-ClinicDB':[], 'Kvasir':[], 'CVC-ColonDB':[], 'ETIS-LaribPolypDB':[], 'test':[]}
-    name = ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB', 'test']
-    
     cfg = Config(config_file='simple.yaml')
 
     device = get_proper_device(cfg.get('device'))
 
     cfg_builder = default_CASCADE_ConfigBuilder(config=cfg)
 
-    model = cfg_builder.build_model_with_config(pre_defined_model=PVT_CASCADE(pvt_backbone_path=cfg.get('model.pvt_backbone_path')))
+    pre_defined_model = PVT_CASCADE(pvt_backbone_path=cfg.get('model.pvt_backbone_path'))
+    # load total pvt cascade model if provided
+    if cfg.get('model.total_pvt_cascade_path') is not None and cfg.get('model.total_pvt_cascade_path') != '':
+        pre_defined_model.load_state_dict(torch.load(cfg.get('model.total_pvt_cascade_path')), strict=False)
+        print(f"Total PVT Cascade model loaded from {cfg.get('model.total_pvt_cascade_path')}")
+
+    model = cfg_builder.build_model_with_config(pre_defined_model=pre_defined_model)
+    # load total extend_CASCADE_classifier model if provided
+    if cfg.get('model.total_model_path') is not None and cfg.get('model.total_model_path') != '':
+        model.load_state_dict(torch.load(cfg.get('model.total_model_path')), strict=False)
+        print(f"Total model loaded from {cfg.get('model.total_model_path')}")
     model.to(device)
 
     optimizer = cfg_builder.build_optimizer_with_config(model=model)
