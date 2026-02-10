@@ -137,8 +137,35 @@ class TestHook(HookBase):
         test_result = self.run_test()
         self.trainer.info_storage.add_to_latest_info(test_result)
 
-
-
+class EarlyStoppingHook(HookBase):
+    def __init__(self, trainer: Trainer, patience: int = 10, criteria: str = 'val_dice', min_improvement: float = 1e-4, cmp: typing.Callable = lambda a, b: a > b):
+        super().__init__(trainer)
+        self.patience = patience
+        self.criteria = criteria
+        self.cmp = cmp
+        self.best_value = None
+        self.min_improvement = min_improvement
+        self.counter = 0
+    def after_train_epoch(self) -> None:
+        latest_info = self.trainer.info_storage.latest_info()
+        if self.criteria not in latest_info:
+            raise ValueError(f"Criteria {self.criteria} is not found in latest info")
+        current_value = latest_info[self.criteria]
+        if self.best_value is None:
+            self.best_value = current_value
+            return
+        if not self.cmp(current_value, self.best_value + self.min_improvement):
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.trainer.stop()
+                return
+        else:
+            self.best_value = current_value
+            self.counter = 0
+    def after_train(self) -> None:
+        if self.counter >= self.patience:
+            print(f"After training for {self.trainer.current_epoch} epochs")
+            print("The training procedure is stopped by EarlyStoppingHook")
 
 def structure_loss(pred, mask):
     weit = 1 + 5 * torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
@@ -319,6 +346,10 @@ if __name__ == '__main__':
                 decay_epoch=cfg.get('hook.lr_schedule.decay_epoch'))
     hook_builder(ClipGradient, clip_rate=float(cfg.get('hook.clip_gradient.clip')))
     hook_builder(LoggerHook, logger_file=cfg.get('hook.logger.logger_file'))
+    hook_builder(EarlyStoppingHook, patience=cfg.get('hook.early_stopping.patience'), 
+                    min_improvement=float(cfg.get('hook.early_stopping.min_improvement')),
+                criteria=cfg.get('hook.early_stopping.criteria'))
+
 
     trainer.train()
     ## ====== training=======
