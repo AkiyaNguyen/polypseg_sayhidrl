@@ -336,9 +336,8 @@ if __name__ == '__main__':
     hook_builder(EvalHook, eval_data_loader=val_loader)
     hook_builder(TestHook, test_dataset_path=cfg.get('dataset.test.path'), 
                 test_every=int(cfg.get('dataset.test.test_every')), 
-                recursive_test=cfg.get('dataset.test.recursive_test'), 
-                img_size=cfg.get('dataset.test.img_size'))
-    hook_builder(MLFlowLoggerHook, logging_fields=['*val*', '*loss*', '*test_dice*'])
+                recursive_test=cfg.get('dataset.test.recursive_test'), img_size=cfg.get('dataset.test.img_size'))
+    hook_builder(MLFlowLoggerHook, logging_fields=['*loss*', '*test_dice*'])
     hook_builder(SaveBestModelHook, 
                 save_best_model_path=cfg.get('hook.save_model.base_pth_path') + f'{cfg.get("model.name")}/', 
                 criteria=cfg.get('hook.save_model.criteria'))

@@ -7,8 +7,10 @@ from typing import Optional
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from typing import Tuple, Dict, Sequence
-from CASCADE.networks import PVT_CASCADE
 import numpy as np
+from CASCADE.pvtv2 import pvt_v2_b2
+from CASCADE.networks import CASCADE
+
 def build_weighted_multi_scale_structure_loss(weights: Optional[Sequence[float]]=None):
     
 
@@ -140,5 +142,42 @@ class extend_CASCADE_classifier(Classifier):
         return {'val_loss': total_loss / len_val_dataset, 'val_dice': total_dice / len_val_dataset}
     
 
-                
-                
+class CrossAttention_With_PVT_CASCADE(nn.Module):
+    def __init__(self, pvt_backbone_path='./pretrained_pth/pvt/pvt_v2_b2.pth', n_class=1):
+        super(CrossAttention_With_PVT_CASCADE, self).__init__()
+
+        # conv block to convert single channel to 3 channels
+        self.conv = nn.Sequential(
+            nn.Conv2d(1, 3, kernel_size=1),
+            nn.BatchNorm2d(3),
+            nn.ReLU(inplace=True)
+        )
+        
+        # backbone network initialization with pretrained weight
+        self.backbone = pvt_v2_b2()  # [64, 128, 320, 512]
+        path = pvt_backbone_path
+        save_model = torch.load(path)
+        model_dict = self.backbone.state_dict()
+        state_dict = {k: v for k, v in save_model.items() if k in model_dict.keys()}
+        model_dict.update(state_dict)
+        self.backbone.load_state_dict(model_dict)
+        
+        # decoder initialization
+        self.decoder = CASCADE(channels=[512, 320, 128, 64])
+    def forward(self, x):
+        
+        # if grayscale input, convert to 3 channels
+        if x.size()[1] == 1:
+            x = self.conv(x)
+        
+        # transformer backbone as encoder
+        x1, x2, x3, x4 = self.backbone(x)
+        
+        # decoder
+        x1_o, x2_o, x3_o, x4_o = self.decoder(x4, [x3, x2, x1])
+        
+        # x1_o.shape = [B, 512, H/32, W/32]
+        # x2_o.shape = [B, 320, H/16, W/16]
+        # x3_o.shape = [B, 128, H/8, W/8]
+        # x4_o.shape = [B, 64, H/4, W/4]
+        
