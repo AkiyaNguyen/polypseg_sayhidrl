@@ -38,3 +38,5 @@ hook:
     patience: 15
     criteria: "val_dice"
     min_improvement: 1e-4
+  mlflow_logger:
+    dir_save_plot: "plots"

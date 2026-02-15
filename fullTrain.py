@@ -300,8 +300,8 @@ if __name__ == '__main__':
 
     cfg_builder = default_CASCADE_ConfigBuilder(config=cfg)
 
-    # pre_defined_model = PVT_CASCADE(pvt_backbone_path=cfg.get('model.pvt_backbone_path'))
-    pre_defined_model = PVT_W_Cross_CASCADE(pvt_backbone_path=cfg.get('model.pvt_backbone_path'))
+    pre_defined_model = PVT_CASCADE(pvt_backbone_path=cfg.get('model.pvt_backbone_path'))
+    # pre_defined_model = PVT_W_Cross_CASCADE(pvt_backbone_path=cfg.get('model.pvt_backbone_path'))
     # load total pvt cascade model if provided
     if cfg.get('model.total_pvt_cascade_path') is not None and cfg.get('model.total_pvt_cascade_path') != '':
         pre_defined_model.load_state_dict(torch.load(cfg.get('model.total_pvt_cascade_path')), strict=False)
@@ -346,10 +346,10 @@ if __name__ == '__main__':
                 test_every=int(cfg.get('dataset.test.test_every')), 
                 recursive_test=cfg.get('dataset.test.recursive_test'), 
                 img_size=cfg.get('dataset.test.img_size'))
-    hook_builder(MLFlowLoggerHook, logging_fields=['*loss*', '*test_dice*'])
-    # hook_builder(SaveBestModelHook, 
-    #             save_best_model_path=cfg.get('hook.save_model.base_pth_path') + f'{cfg.get("model.name")}/', 
-    #             criteria=cfg.get('hook.save_model.criteria'))
+    hook_builder(MLFlowLoggerHook, logging_fields=['*loss*', '*test_dice*'], dir_save_plot=cfg.get('hook.mlflow_logger.dir_save_plot'))
+    hook_builder(SaveBestModelHook, 
+                save_best_model_path=cfg.get('hook.save_model.base_pth_path') + f'{cfg.get("model.name")}/', 
+                criteria=cfg.get('hook.save_model.criteria'))
     hook_builder(LRScheduleHook, decay_rate=cfg.get('hook.lr_schedule.decay_rate'), 
                 decay_epoch=cfg.get('hook.lr_schedule.decay_epoch'))
     hook_builder(ClipGradient, clip_rate=float(cfg.get('hook.clip_gradient.clip')))
