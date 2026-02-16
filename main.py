@@ -4,7 +4,7 @@ import os
 from mylib.engine.Trainer import Trainer
 from mylib.engine.nnModuleUtil import extend_module
 from mylib.engine.Config import Config, HookBuilder, ConfigBuilder
-from mylib.engine.Hook import HookBase, EvalHook, LoggerHook, MLFlowLoggerHook
+from mylib.engine.Hook import HookBase, EvalHook, LoggerHook, MLFlowLoggerHook, EarlyStoppingHook
 
 import torch
 import torch.nn as nn
@@ -17,7 +17,7 @@ import numpy as np
 
 from CASCADE.networks import PVT_CASCADE
 from utils.dataloader import test_dataset, get_train_val_loader
-from utils.utils import clip_gradient, adjust_lr, AvgMeter
+from utils.utils import clip_gradient, adjust_lr
 from utils.extend_CASCADE import extend_CASCADE_classifier
 
 
@@ -137,36 +137,6 @@ class TestHook(HookBase):
         test_result = self.run_test()
         self.trainer.info_storage.add_to_latest_info(test_result)
 
-class EarlyStoppingHook(HookBase):
-    def __init__(self, trainer: Trainer, patience: int = 10, criteria: str = 'val_dice', min_improvement: float = 1e-4, cmp: typing.Callable = lambda a, b: a > b):
-        super().__init__(trainer)
-        self.patience = patience
-        self.criteria = criteria
-        self.min_improvement = min_improvement
-        self.cmp = cmp
-        self.best_value = None
-        self.counter = 0
-    def after_train_epoch(self) -> None:
-        latest_info = self.trainer.info_storage.latest_info()
-        if self.criteria not in latest_info:
-            raise ValueError(f"Criteria {self.criteria} is not found in latest info")
-        current_value = latest_info[self.criteria]
-        if self.best_value is None:
-            self.best_value = current_value
-            return
-        if not self.cmp(current_value, self.best_value + self.min_improvement):
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.trainer.stop_training()
-                return
-        else:
-            self.best_value = current_value
-            self.counter = 0
-    def after_train(self) -> None:
-        if self.counter >= self.patience:
-            print(f"after training for {self.trainer.current_epoch + 1} epochs")
-            print("The training procedure is stopped by EarlyStoppingHook")
-
 def structure_loss(pred, mask):
     weit = 1 + 5 * torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
     wbce = F.binary_cross_entropy_with_logits(pred, mask, reduce=None)
@@ -230,45 +200,7 @@ class default_CASCADE_ConfigBuilder(ConfigBuilder):
         if num_epochs is None:
             raise ValueError("Number of epochs is not set")
         return Trainer(model, train_data_loader, optimizer, num_epochs)
-
-# def test(model, path, dataset):
-
-#     data_path = os.path.join(path, dataset)
-#     image_root = '{}/images/'.format(data_path)
-#     gt_root = '{}/masks/'.format(data_path)
-#     model.eval()
-#     num1 = len(os.listdir(gt_root))
-#     test_loader = test_dataset(image_root, gt_root, opt.img_size)
-#     DSC = 0.0
-#     for i in range(num1):
-#         image, gt, name = test_loader.load_data()
-#         gt = np.asarray(gt, np.float32)
-#         gt /= (gt.max() + 1e-8)
-#         image = image.cuda()
-
-#         res1, res2, res3, res4 = model(image) # forward
         
-        
-#         res = F.upsample(res1 + res2 + res3 + res4, size=gt.shape, mode='bilinear', align_corners=False) # additive aggregation and upsampling
-#         res = res.sigmoid().data.cpu().numpy().squeeze() # apply sigmoid aggregation for binary segmentation
-#         res = (res - res.min()) / (res.max() - res.min() + 1e-8)
-            
-#         # eval Dice
-#         input = res
-#         target = np.array(gt)
-#         N = gt.shape
-#         smooth = 1
-#         input_flat = np.reshape(input, (-1))
-#         target_flat = np.reshape(target, (-1))
-#         intersection = (input_flat * target_flat)
-#         dice = (2 * intersection.sum() + smooth) / (input.sum() + target.sum() + smooth)
-#         dice = '{:.4f}'.format(dice)
-#         dice = float(dice)
-#         DSC = DSC + dice
-
-#     return DSC / num1, num1  
-
-
 class DefaultTrainer(Trainer):
     def scaled_dataloader_(self, rates):
         for batch in self.train_data_loader:

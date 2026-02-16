@@ -25,3 +25,6 @@ train.sh
 test_output/
 
 model_pth/
+temp/
+
+try.*
